@@ -37,11 +37,11 @@ const register = async (req, res, next) => {
         });
 
     } catch (error) {
-        console.log(error)
+        next(error);
     }
 }
 
-const login = async (req, res) => {
+const login = async (req, res,next) => {
     try {
         const { email, password } = req.body
         const userExists = await User.findOne({ email });
@@ -75,13 +75,23 @@ const login = async (req, res) => {
             data: userResponse
         });
     } catch (error) {
-        console.log(error)
+        next(error);
+    }
+}
+
+const user=async(req,res,next)=>{
+    try {
+    const user=req.user
+    return res.status(200).json({user});
+    } catch (error) {
+        next(error)
     }
 }
 
 const authController = {
     register,
-    login
+    login,
+    user
 }
 
 export default authController
