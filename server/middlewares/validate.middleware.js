@@ -1,8 +1,8 @@
-const validate = (schema) => async (req, res, next) => {
+const validate = (schema, source = "body") => async (req, res, next) => {
     try {
-        const parseBody = await schema.parseAsync(req.body);
+        const parsedData = await schema.parseAsync(req[source]);
 
-        req.body = parseBody;
+        req[source] = parsedData;
 
         next();
 
@@ -12,7 +12,7 @@ const validate = (schema) => async (req, res, next) => {
             const error = {
                 status: 400,
                 message: "Validation failed",
-                extraDetails: err.issues.map((issue) => issue.message)
+                extraDetails: err.issues.map(issue => issue.message)
             };
 
             return next(error);

@@ -1,6 +1,7 @@
 import { Schema, model } from "mongoose";
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
+import { string } from "zod";
 const userSchema = new Schema({
 
     name: {
@@ -34,6 +35,14 @@ const userSchema = new Schema({
     isBlocked: {
         type: Boolean,
         default: false
+    },
+    resetPasswordToken:{
+        type:String,
+        default:null
+    },
+    resetPasswordExpires:{
+        type:Date,
+        default:null
     }
 
 }, {
