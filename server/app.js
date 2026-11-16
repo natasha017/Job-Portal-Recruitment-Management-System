@@ -7,6 +7,7 @@ const app=express();
 //middlewares
 app.use(express.json());
 
+
 app.use("/api/auth",authRouter);
 
 

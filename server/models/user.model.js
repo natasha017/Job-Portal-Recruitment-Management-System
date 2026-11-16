@@ -1,7 +1,7 @@
 import { Schema, model } from "mongoose";
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
-import { string } from "zod";
+
 const userSchema = new Schema({
 
     name: {
@@ -27,10 +27,16 @@ const userSchema = new Schema({
         default: "candidate"
     },
 
-    avatar: {
+   avatar: {
+    url: {
         type: String,
         default: ""
     },
+    public_id: {
+        type: String,
+        default: ""
+    }
+},
 
     isBlocked: {
         type: Boolean,

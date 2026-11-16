@@ -53,9 +53,14 @@ export const resetPasswordTokenSchema = z.object({
 });
 
 export const resetPasswordSchema = z.object({
-    password: z
-        .string({ error: "Password is required" })
-        .min(10, { message: "Password must be at least 10 characters" })
+  password: z
+    .string({ error: "Password is required" })
+    .min(10, { message: "Password must be at least 10 characters" }),
+
+  confirmPassword: z
+    .string({ error: "Confirm password is required" })
+    .min(1, { message: "Confirm password is required" })
 });
+
 
 

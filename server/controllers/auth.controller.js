@@ -1,85 +1,149 @@
 import User from "../models/user.model.js"
 import crypto from "crypto"
 import transporter from "../config/nodemailer.js"
+import cloudinary from "../config/cloudinary.js"
 
 const register = async (req, res, next) => {
-    try {
-        const { name, email, password, role, avatar } = req.body
+  let uploadedPublicId = null;
 
-        const userExists = await User.findOne({ email });
-        
-        if (userExists) {
-            return res
-                .status(400)
-                .json({ message: "Email already exists" });
-        }
+  try {
+    const { name, email, password } = req.body;
 
-        const userCreated = await User.create({
-            name,
-            email,
-            password,
-            role: role || "candidate",
-            avatar: avatar || "",
-        });
+    let avatar = {
+      url: "",
+      public_id: ""
+    };
 
-        const userResponse = userCreated.toObject()
-        delete userResponse.password
+    const userExists = await User.findOne({ email });
 
-        const token = userCreated.generateToken()
-
-        res.cookie("token", token, {
-            httpOnly: true,
-            maxAge: 30 * 24 * 60 * 60 * 1000
-        });
-
-        return res.status(201).json({
-            message: "Register Successfully",
-            data: userResponse,
-            token
-        });
-
-    } catch (error) {
-        next(error);
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already exists"
+      });
     }
-}
 
-const login = async (req, res,next) => {
-    try {
-        const { email, password } = req.body
-        const userExists = await User.findOne({ email });
-       
-        if (!userExists) {
-            return res.status(404).json({
-                message: "Invalid Credentails"
-            });
-        }
+    if (req.file) {
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          {
+            folder: "job-portal/avatars",
+            resource_type: "image"
+          },
+          (error, result) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          }
+        ).end(req.file.buffer);
+      });
 
-        const isPasswordValid = await userExists.comparePassword(password)
+      avatar = {
+        url: result.secure_url,
+        public_id: result.public_id
+      };
 
-        if (!isPasswordValid) {
-            return res.status(404).json({
-                message: "Invalid Credentials"
-            });
-        }
-
-        const userResponse = userExists.toObject()
-        delete userResponse.password
-
-        const token = await userExists.generateToken()
-        res.cookie("token", token, {
-            httpOnly: true,
-            maxAge: 30 * 24 * 60 * 60 * 1000
-        });
-
-        return res.status(200).json({
-            message: "Login Successfully",
-            token,
-            data: userResponse
-        });
-    } catch (error) {
-        next(error);
+      uploadedPublicId = result.public_id;
     }
-}
+    
+    let userCreated;
+
+    try {
+      userCreated = await User.create({
+        name,
+        email,
+        password,
+        role: "candidate",
+        avatar
+      });
+    } catch (error) {
+      if (uploadedPublicId) {
+        try {
+          await cloudinary.uploader.destroy(uploadedPublicId);
+        } catch (cleanupError) {
+          console.error("Cloudinary cleanup failed:", cleanupError);
+        }
+      }
+
+      throw error;
+    }
+
+   const userResponse = userCreated.toObject();
+   delete userResponse.password;
+
+    const token = userCreated.generateToken();
+    
+    res.cookie("token", token, {
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Register Successfully",
+      data: userResponse,
+      token
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+const login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    
+    const userExists = await User.findOne({ email });
+
+    if (!userExists) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid Credentials"
+      });
+    }
+    
+    if (userExists.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been blocked"
+      });
+    }
+
+    const isPasswordValid =await userExists.comparePassword(password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid Credentials"
+      });
+    }
+    
+    const userResponse = userExists.toObject();
+    delete userResponse.password;
+
+
+    const token = userExists.generateToken();
+
+    // Set cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login Successfully",
+      token,
+      data: userResponse
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
 
 const logout = async(req,res,next)=>{
     try {
@@ -114,7 +178,7 @@ const forgotPassword = async (req, res, next) => {
             .digest("hex");
 
         userExist.resetPasswordToken = hashToken;
-        userExist.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+        userExist.resetPasswordExpires =new Date(Date.now() + 15 * 60 * 1000);
 
         await userExist.save();
 
@@ -155,23 +219,30 @@ const forgotPassword = async (req, res, next) => {
 
 const resetPassword = async (req, res, next) => {
     try {
-       
+        
         const { token } = req.params;
-        const { password } = req.body;
-
+        
+        const { password, confirmPassword } = req.body;
+        
+        if (password !== confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Passwords do not match"
+            });
+        }
         
         const hashToken = crypto
             .createHash("sha256")
             .update(token)
             .digest("hex");
-
-        
-        const userExist = await User.findOne({
+            
+            const userExist = await User.findOne({
             resetPasswordToken: hashToken,
-            resetPasswordExpires: { $gt: new Date() }
+            resetPasswordExpires: {
+                $gt: new Date()
+            }
         });
 
-        
         if (!userExist) {
             return res.status(400).json({
                 success: false,
@@ -179,19 +250,16 @@ const resetPassword = async (req, res, next) => {
             });
         }
 
-        
         userExist.password = password;
-
         
         userExist.resetPasswordToken = null;
         userExist.resetPasswordExpires = null;
-
-    
+        
         await userExist.save();
-
+        
         return res.status(200).json({
             success: true,
-            message: "Password reset successfully"
+            message: "Password reset successfully. Please login."
         });
 
     } catch (error) {
