@@ -71,28 +71,24 @@ userSchema.pre("save", async function(){
     throw error
    }
 });
-//token
-userSchema.methods.generateToken=function(){
-    try {
-    return jwt.sign({
-        userId:this._id.toString(),
-        userEmail:this.email,
-        userRole:this.role
-    },process.env.JWT_SECRET_KEY,
-    {expiresIn:"30d"}
-)
-} catch (error) {
-        console.error(error)
-    }
-}
-//comparePassword
-userSchema.methods.comparePassword= async function(password){
-    try {
-        return  await bcrypt.compare(password,this.password);
-    } catch (error) {
-        console.log(error)
-    }
-}
+// Generate JWT Token
+userSchema.methods.generateToken = function () {
+  if (!process.env.JWT_SECRET_KEY) {
+    throw new Error("JWT_SECRET_KEY is missing");
+  }
+
+  return jwt.sign({
+    userId: this._id.toString(),
+    userEmail: this.email,
+    userRole: this.role
+  }, process.env.JWT_SECRET_KEY, {
+    expiresIn: "30d"
+  });
+};
+// Compare Password
+userSchema.methods.comparePassword = async function (password) {
+  return await bcrypt.compare(password, this.password);
+};
 
 
 const User = model("User", userSchema);

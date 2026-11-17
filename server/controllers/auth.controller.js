@@ -7,37 +7,45 @@ const register = async (req, res, next) => {
   let uploadedPublicId = null;
 
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role } = req.body;
+
+    // Only candidate and recruiter can register publicly
+    if (!["candidate", "recruiter"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role. Only candidate and recruiter can register."
+      });
+    }
+
+    const userExists = await User.findOne({ email });
+
+    if (userExists) {
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists"
+      });
+    }
 
     let avatar = {
       url: "",
       public_id: ""
     };
 
-    const userExists = await User.findOne({ email });
-
-    if (userExists) {
-      return res.status(400).json({
-        success: false,
-        message: "Email already exists"
-      });
-    }
-
+    // Upload avatar to Cloudinary
     if (req.file) {
       const result = await new Promise((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
-          {
-            folder: "job-portal/avatars",
-            resource_type: "image"
-          },
-          (error, result) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result);
+        cloudinary.uploader
+          .upload_stream(
+            {
+              folder: "job-portal/avatars",
+              resource_type: "image"
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
             }
-          }
-        ).end(req.file.buffer);
+          )
+          .end(req.file.buffer);
       });
 
       avatar = {
@@ -47,7 +55,7 @@ const register = async (req, res, next) => {
 
       uploadedPublicId = result.public_id;
     }
-    
+
     let userCreated;
 
     try {
@@ -55,10 +63,11 @@ const register = async (req, res, next) => {
         name,
         email,
         password,
-        role: "candidate",
+        role,
         avatar
       });
     } catch (error) {
+      // Delete uploaded avatar if user creation fails
       if (uploadedPublicId) {
         try {
           await cloudinary.uploader.destroy(uploadedPublicId);
@@ -70,21 +79,29 @@ const register = async (req, res, next) => {
       throw error;
     }
 
-   const userResponse = userCreated.toObject();
-   delete userResponse.password;
+    // Remove sensitive fields from response
+    const userResponse = userCreated.toObject();
+
+    delete userResponse.password;
+    delete userResponse.resetPasswordToken;
+    delete userResponse.resetPasswordExpires;
 
     const token = userCreated.generateToken();
-    
-    res.cookie("token", token, {
+
+    // Set secure HTTP-only cookie
+    const cookieOptions = {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000
-    });
+    };
+
+    res.cookie("token", token, cookieOptions);
 
     return res.status(201).json({
       success: true,
-      message: "Register Successfully",
-      data: userResponse,
-      token
+      message: "Registration successful",
+      data: userResponse
     });
 
   } catch (error) {
@@ -95,7 +112,7 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    
+
     const userExists = await User.findOne({ email });
 
     if (!userExists) {
@@ -104,7 +121,7 @@ const login = async (req, res, next) => {
         message: "Invalid Credentials"
       });
     }
-    
+
     if (userExists.isBlocked) {
       return res.status(403).json({
         success: false,
@@ -112,7 +129,7 @@ const login = async (req, res, next) => {
       });
     }
 
-    const isPasswordValid =await userExists.comparePassword(password);
+    const isPasswordValid = await userExists.comparePassword(password);
 
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -120,23 +137,29 @@ const login = async (req, res, next) => {
         message: "Invalid Credentials"
       });
     }
-    
-    const userResponse = userExists.toObject();
-    delete userResponse.password;
 
+    // Remove sensitive fields
+    const userResponse = userExists.toObject();
+
+    delete userResponse.password;
+    delete userResponse.resetPasswordToken;
+    delete userResponse.resetPasswordExpires;
 
     const token = userExists.generateToken();
 
-    // Set cookie
-    res.cookie("token", token, {
+    // Cookie options (same as register)
+    const cookieOptions = {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000
-    });
+    };
+
+    res.cookie("token", token, cookieOptions);
 
     return res.status(200).json({
       success: true,
-      message: "Login Successfully",
-      token,
+      message: "Login successful",
       data: userResponse
     });
 
@@ -154,7 +177,7 @@ const logout = async(req,res,next)=>{
     } catch (error) {
         next(error)
     }
-}
+};
 
 const forgotPassword = async (req, res, next) => {
     let userExist;
@@ -274,7 +297,7 @@ const user=async(req,res,next)=>{
     } catch (error) {
         next(error)
     }
-}
+};
 
 const authController = {
     register,
@@ -283,6 +306,6 @@ const authController = {
     resetPassword,
     logout,
     user
-}
+};
 
 export default authController
